@@ -164,13 +164,6 @@ extern volatile pde_t vpd[];     // VA of current page directory
 struct Page {
 	// Next page on the free list.
 	struct Page *pp_link;
-	Page_LIST_entry_t pp_link;	/* free list link */
-	/*
-	struct {
-		struct Page *le_next;
-		struct Page **le_prev;
-	} pp_link;
-	*/
 
 	// pp_ref is the count of pointers (usually in page table entries)
 	// to this page, for pages allocated using page_alloc.

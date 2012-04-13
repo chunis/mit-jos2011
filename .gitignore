@@ -12,3 +12,5 @@
 /lab?/
 /sol?/
 /conf/lab.mk
+/makefile
+/cscope.*
