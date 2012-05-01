@@ -46,6 +46,7 @@ i386_detect_memory(void)
 	else
 		npages = npages_basemem;
 
+	//cprintf("EXTPHYSMEM / PGSIZE = %d, npages_basemem = %d\n", EXTPHYSMEM / PGSIZE, npages_basemem);
 	cprintf("Physical memory: %uK available, base = %uK, extended = %uK\n",
 		npages * PGSIZE / 1024,
 		npages_basemem * PGSIZE / 1024,
@@ -104,10 +105,9 @@ boot_alloc(uint32_t n)
 	result = nextfree;
 	nextfree += (n + PGSIZE - 1) / PGSIZE * PGSIZE;
 	cprintf("nextfree: %x\n", (uint32_t)nextfree);
-	cprintf("o: %x\n", (npages + 256 - npages_basemem) * PGSIZE);
 	// we assume memory size > 1M
 	//if((uint32_t)nextfree > (uint32_t)KADDR((npages + 256 - npages_basemem) * PGSIZE))
-	if((uint32_t)nextfree > (uint32_t)((npages + 256 - npages_basemem) * PGSIZE + KERNBASE))
+	if((uint32_t)nextfree > (uint32_t)(npages * PGSIZE + KERNBASE))
 		panic("boot_alloc: Out of Memory!");
 
 	return result;
@@ -269,13 +269,13 @@ page_init(void)
 
 	// mark kernel and pages struct as in use
 	//for(; i < nextfree / PGSIZE; i++){
-	for(; i <= PGNUM(PADDR(&pages[npages])); i++){
+	for(i = npages_basemem; i <= PGNUM(PADDR(&pages[npages])); i++){
 		pages[i].pp_ref = 1;
 		pages[i].pp_link = 0;
 	}
 
 	// mark all other memory as free
-	for (; i < (npages + 256 - npages_basemem); i++) {
+	for (; i < npages; i++) {
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
