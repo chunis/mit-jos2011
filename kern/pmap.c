@@ -360,14 +360,12 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 	pte_t *ptp;
 	pte_t *pte;
 	struct Page *pp = 0;
-	int i;
-	int flag;
 
 	ptp = &pgdir[PDX(va)];
 	DBG(*ptp);
 
 	if(*ptp & PTE_P) {	// page table exists
-		pte = (pte_t *)*ptp;
+		pte = (pte_t *)KADDR(PTE_ADDR(*ptp));
 		//DBG(*ptp);
 		//DBG(pte);
 		return (pte_t *)(pte + PTX(va));
@@ -383,7 +381,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 	pp->pp_ref++;
 	pte = page2kva(pp);
 	memset(pte, 0, PGSIZE);
-	*ptp = PTE_ADDR(PADDR(pte)) | PTE_P;
+	*ptp = PTE_ADDR(PADDR(pte)) | PTE_U | PTE_W | PTE_P;
 	//DBG((pte_t *)(pte + PTX(va)));
 
 	return (pte_t *)(pte + PTX(va));
@@ -444,16 +442,17 @@ page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 	//cprintf("find va now\n");
 	if(PTE_ADDR(*pte) == page2pa(pp)){
 		//cprintf("need not re-insert the same page\n");
-		return 0;
+		pp->pp_ref--;
 	}
 
-	if(PTE_ADDR(*pte)){
+	else if(PTE_ADDR(*pte)){
 		//cprintf("need to remove page\n");
 		page_remove(pgdir, va);
 	}
 
 	//cprintf("now insert page\n");
 	*pte = PTE_ADDR(page2pa(pp)) | (perm|PTE_P);
+	pp->pp_ref++;
 
 	return 0;
 }
@@ -778,8 +777,6 @@ check_page(void)
 	page_free(pp0);
 	assert(page_insert(kern_pgdir, pp1, 0x0, PTE_W) == 0);
 	assert(PTE_ADDR(kern_pgdir[0]) == page2pa(pp0));
-	DBG(check_va2pa(kern_pgdir, 0x0));
-	DBG(page2pa(pp1));
 	assert(check_va2pa(kern_pgdir, 0x0) == page2pa(pp1));
 	assert(pp1->pp_ref == 1);
 	assert(pp0->pp_ref == 1);
