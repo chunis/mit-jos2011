@@ -9,6 +9,8 @@
 #include <kern/pmap.h>
 #include <kern/kclock.h>
 
+#define DBG(x) (cprintf(#x " = %x\n", x))
+
 // These variables are set by i386_detect_memory()
 size_t npages;			// Amount of physical memory (in pages)
 static size_t npages_basemem;	// Amount of base memory (in pages)
@@ -46,7 +48,6 @@ i386_detect_memory(void)
 	else
 		npages = npages_basemem;
 
-	//cprintf("EXTPHYSMEM / PGSIZE = %d, npages_basemem = %d\n", EXTPHYSMEM / PGSIZE, npages_basemem);
 	cprintf("Physical memory: %uK available, base = %uK, extended = %uK\n",
 		npages * PGSIZE / 1024,
 		npages_basemem * PGSIZE / 1024,
@@ -268,7 +269,6 @@ page_init(void)
 	}
 
 	// mark kernel and pages struct as in use
-	//for(; i < nextfree / PGSIZE; i++){
 	for(i = npages_basemem; i <= PGNUM(PADDR(&pages[npages])); i++){
 		pages[i].pp_ref = 1;
 		pages[i].pp_link = 0;
@@ -357,8 +357,32 @@ page_decref(struct Page* pp)
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
-	// Fill this function in
-	return NULL;
+	pte_t *ptp;
+	pte_t *pte;
+	struct Page *pp = 0;
+	int i;
+	int flag;
+
+	ptp = &pgdir[PDX(va)];
+	cprintf("*ptp: %x\n", *ptp);
+
+	if(*ptp & PTE_P) {	// page table exists
+		pte = (pte_t *)*ptp;
+		return (pte_t *)(pte + PTX(va));
+	}
+
+	if(!create)
+		return NULL;
+
+	pp = page_alloc(ALLOC_ZERO);
+	if(!pp)
+		return NULL;
+
+	pp->pp_ref++;
+	pte = page2kva(pp);
+	memset(pte, 0, PGSIZE);
+	*ptp = PTE_ADDR(PADDR(pte)) | PTE_P;
+	return (pte_t *)(pte + PTX(va));
 }
 
 //
@@ -404,7 +428,17 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 int
 page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 {
-	// Fill this function in
+	pte_t *ptp;
+
+	ptp = pgdir_walk(pgdir, va, 0);
+	if(!ptp){
+		ptp = pgdir_walk(pgdir, va, 1);
+		if(!ptp)
+			return -E_NO_MEM;
+	}
+
+	//page_remove(pgdir, va);
+	*ptp = PTE_ADDR(page2pa(pp)) | (perm|PTE_A);
 	return 0;
 }
 
@@ -422,7 +456,16 @@ page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 struct Page *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
-	// Fill this function in
+	pte_t *pp;
+
+	pp = pgdir_walk(pgdir, va, 0);
+	if(pp){
+		if(pte_store)
+			**pte_store = *pp;
+
+		return pa2page(*pp);
+	}
+
 	return NULL;
 }
 
@@ -444,7 +487,16 @@ page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 void
 page_remove(pde_t *pgdir, void *va)
 {
-	// Fill this function in
+	pte_t *ptep;
+	struct Page *pp;
+
+	ptep = pgdir_walk(pgdir, va, 0);
+	if(ptep){
+		pp = pa2page(PTE_ADDR(*ptep));
+		page_decref(pp);
+		*ptep = 0;	// clean pg table entry
+		tlb_invalidate(pgdir, va);
+	}
 }
 
 //
@@ -710,6 +762,8 @@ check_page(void)
 	page_free(pp0);
 	assert(page_insert(kern_pgdir, pp1, 0x0, PTE_W) == 0);
 	assert(PTE_ADDR(kern_pgdir[0]) == page2pa(pp0));
+	DBG(check_va2pa(kern_pgdir, 0x0));
+	DBG(page2pa(pp1));
 	assert(check_va2pa(kern_pgdir, 0x0) == page2pa(pp1));
 	assert(pp1->pp_ref == 1);
 	assert(pp0->pp_ref == 1);
